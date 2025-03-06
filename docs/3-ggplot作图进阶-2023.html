@@ -1,0 +1,766 @@
+<!DOCTYPE html>
+<html lang="" xml:lang="">
+  <head>
+    <title>.white[.large[3.ggplot作图进阶]]</title>
+    <meta charset="utf-8" />
+    <meta name="author" content="" />
+    <script src="libs/header-attrs-2.25/header-attrs.js"></script>
+    <link href="libs/remark-css-0.0.1/default.css" rel="stylesheet" />
+    <link rel="stylesheet" href="zh-CN.css" type="text/css" />
+    <link rel="stylesheet" href="extra.css" type="text/css" />
+    <link rel="stylesheet" href="footer-header.css" type="text/css" />
+  </head>
+  <body>
+    <textarea id="source">
+class: center, middle, inverse, title-slide
+
+.title[
+# .white[.large[<code>3.ggplot</code>作图进阶]]
+]
+.author[
+### 
+]
+
+---
+
+
+layout: true
+  
+&lt;div class="my-footer"&gt;&lt;span&gt;Qiao-Guo Tan/CEE/XMU | tanqg@xmu.edu.cn | 2025-Mar-06   
+&amp;emsp;&amp;emsp;&amp;emsp;&amp;emsp;&amp;emsp;&amp;emsp;&amp;emsp;&amp;emsp;&amp;emsp;&amp;emsp;&amp;emsp;&amp;emsp;&amp;emsp;
+&amp;emsp;&amp;emsp;&amp;emsp;&amp;emsp;&amp;emsp;&amp;emsp;&amp;emsp;&amp;emsp;&amp;emsp;&amp;emsp;&amp;emsp;&amp;emsp;&amp;emsp;
+&lt;/span&gt;&lt;/div&gt; 
+
+
+---
+## 进阶：拟合及结果可视化  
+* R自带的另一套数据**`DNase`**
+&gt; **Elisa assay of DNase**   
+&gt; Description  
+&gt; The DNase data frame has 176 rows and 3 columns of data obtained during development of an ELISA assay for the recombinant protein DNase in rat serum.  
+
+&gt; Source  
+&gt; Davidian, M. and Giltinan, D. M. (1995) Nonlinear Models for Repeated Measurement Data, Chapman &amp; Hall (section 5.2.4, p. 134
+
+###这套数据和我们研究中遇到的数据很类似。用ELISA方法测定大鼠血清中的DNA酶，得到酶浓度和吸光度数据。实验做了11次，每次测定有平行样。
+
+---
+
+## 先用**`head()`**和**`str()`**来查看数据  
+.pull-left37[
+
+```r
+head(DNase)
+```
+
+```
+##   Run       conc density
+## 1   1 0.04882812   0.017
+## 2   1 0.04882812   0.018
+## 3   1 0.19531250   0.121
+## 4   1 0.19531250   0.124
+## 5   1 0.39062500   0.206
+## 6   1 0.39062500   0.215
+```
+]
+--
+.pull-right37[
+
+```r
+str(DNase)
+```
+
+```
+## Classes 'nfnGroupedData', 'nfGroupedData', 'groupedData' and 'data.frame':	176 obs. of  3 variables:
+*##  $ Run    : Ord.factor w/ 11 levels "10"&lt;"11"&lt;"9"&lt;..: 4 4 4 4 4 4 4 4 4 4 ...
+*##  $ conc   : num  0.0488 0.0488 0.1953 0.1953 0.3906 ...
+*##  $ density: num  0.017 0.018 0.121 0.124 0.206 0.215 0.377 0.374 0.614 0.609 ...
+##  - attr(*, "formula")=Class 'formula'  language density ~ conc | Run
+##   .. ..- attr(*, ".Environment")=&lt;environment: R_EmptyEnv&gt; 
+##  - attr(*, "labels")=List of 2
+##   ..$ x: chr "DNase concentration"
+##   ..$ y: chr "Optical density"
+##  - attr(*, "units")=List of 1
+##   ..$ x: chr "(ng/ml)"
+```
+]
+???
+
+注意：`Run`虽然是数字，类型却是`factor`，因此后面`facet`时可以直接操作，而无需转化为`factor`。
+---
+## 散点图是探索性分析的法宝  
+
+
+.pull-left[
+
+```r
+library(ggplot2)
+ggplot(DNase, aes(conc, density))+
+  geom_point()
+```
+]
+
+.pull-right[
+
+&lt;img src="pics/DNase_1.png" width="2480" /&gt;
+]
+
+---
+class: inverse, center
+&lt;br&gt;
+&lt;br&gt;
+&lt;br&gt;
+## 这个数据让你想起了什么？
+
+--
+
+## 有点像酶反应里的米氏动力学
+
+--
+## 确定分析方向：用米氏方程去拟合数据
+
+
+
+---
+## 均值+标准差（换一种方法）
+画误差棒的两种方法：  
+`stat_summary(geom = "errorbar", ...)`  
+`geom_errorbar(stat = "summary", ...)`
+
+.pull-left[
+```r
+ggplot(DNase, aes(conc, density))+
+*  geom_point(stat="summary", fun="mean")+
+*  geom_errorbar(stat="summary", fun.min=function(x) mean(x)-sd(x), fun.max=function(x) mean(x)+sd(x), width=0.2)
+
+```
+]
+
+.pull-right[
+&lt;img src="pics/DNase_2.png" width="2480" /&gt;
+]
+---
+## 对比两种等价的作图方法  
+
+
+方法1             |   方法2  
+------------|----------------
+`geom_errorbar(stat = "summary", ...)` | `stat_summary(geom = "errorbar",...)`
+`geom_point(stat = "summary",...)` | `stat_summary(geom = "point",...)`
+`geom_line(stat = "summary",...)` | `stat_summary(geom = "line",...)`
+... | ...
+
+---
+
+## **`nls()`**非线性拟合米氏方程：手动提取拟合结果  
+
+- 米氏方程： `\(V=\frac{V\text{max}\times C}{K_\text{M}+C}\)`
+
+- 非线性拟合  
+拟合前，观察原始数据，大致判断.red[Vmax]和.red[KM]的值
+.pull-left67[
+
+```r
+nls(density ~ conc * Vmax/(KM + conc), 
+    data = DNase, 
+    start = list(Vmax = 2, KM = 6))
+```
+
+```
+## Nonlinear regression model
+##   model: density ~ conc * Vmax/(KM + conc)
+##    data: DNase
+*##  Vmax    KM 
+*## 2.280 3.682 
+##  residual sum-of-squares: 0.4192
+## 
+## Number of iterations to convergence: 6 
+## Achieved convergence tolerance: 5.14e-06
+```
+]
+
+--
+
+.pull-right67[
+
+- 手动赋值
+
+```r
+Vmax &lt;- 2.280 
+KM &lt;- 3.682
+```
+
+]
+
+---
+
+## **`nls()`**非线性拟合米氏方程：自动提取拟合结果-1  
+
+- 将拟合结果存入**`fit`**
+
+
+```r
+fit &lt;- nls(density ~ conc * Vmax/(KM + conc), data = DNase, start = list(Vmax = 2, KM = 6))
+```
+
+--
+
+- 查看结果  
+
+```r
+summary(fit)
+```
+
+```
+## 
+## Formula: density ~ conc * Vmax/(KM + conc)
+## 
+## Parameters:
+##      Estimate Std. Error t value Pr(&gt;|t|)    
+*## Vmax  2.28032    0.02189  104.16   &lt;2e-16 ***
+*## KM    3.68241    0.08677   42.44   &lt;2e-16 ***
+## ---
+## Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+## 
+## Residual standard error: 0.04909 on 174 degrees of freedom
+## 
+## Number of iterations to convergence: 6 
+## Achieved convergence tolerance: 5.14e-06
+```
+
+---
+
+## **`nls()`**非线性拟合米氏方程：自动提取拟合结果-2  
+
+- 查看`summary`里储存了哪些信息  
+
+```r
+names(summary(fit)) 
+```
+
+```
+##  [1] "formula"      "residuals"    "sigma"        "df"           "cov.unscaled"
+##  [6] "call"         "convInfo"     "control"      "na.action"    "coefficients"
+## [11] "parameters"
+```
+
+--
+
+- 提取我们需要的参数拟合值  
+
+
+```r
+coefficients(fit) #或者summary(fit)$coefficients
+```
+
+```
+##     Vmax       KM 
+## 2.280318 3.682409
+```
+
+```r
+Vmax &lt;- coefficients(fit)[1]
+
+KM &lt;- coefficients(fit)[2]
+```
+
+---
+
+## 生成画拟合线所需的数据  
+
+- 生成数据  
+
+
+```r
+fit_x &lt;- seq(0, 14, length.out = 100) #生成100个x，涵盖原始数据范围
+fit_y &lt;- Vmax * fit_x /(KM + fit_x) #将x和参数值代入米氏方程，计算y
+
+
+d_fit &lt;- data.frame(conc = fit_x, density = fit_y) #注意命名和原数据保持一致，可以不一致，但一致的话画图更简单
+```
+
+--
+
+- 查看一下所生成的数据  
+
+
+```r
+head(d_fit)
+```
+
+```
+##        conc    density
+## 1 0.0000000 0.00000000
+## 2 0.1414141 0.08433162
+## 3 0.2828283 0.16264812
+## 4 0.4242424 0.23557091
+## 5 0.5656566 0.30363863
+## 6 0.7070707 0.36732053
+```
+
+
+---
+## 添加拟合线
+
+.pull-left[
+```r
+ggplot(DNase, aes(conc, density))+
+  geom_point(stat = "summary", fun = "mean")+
+  geom_errorbar(stat = "summary", 
+                fun.min = function(x) 
+                mean(x) - sd(x), 
+                fun.max = function(x) 
+                mean(x) + sd(x), 
+                width = 0.2)+
+* geom_line(data = d_fit) #不需要设定aes(x = , y = )，因为继承了第1行代码的设定；如果x,y名字与原数据不一样，则需设定。
+
+```
+]
+
+
+.pull-right[
+
+&lt;img src="pics/DNase_3.png" width="2480" /&gt;
+
+]
+
+
+---
+## 修饰细节  
+
+.pull-left[
+```r
+ggplot(DNase, aes(conc, density))+
+  theme_bw()+
+  geom_line(data = d_fit, linewidth = 0.7, 
+            alpha = 0.7, color = "red2")+
+  geom_point(stat = "summary", 
+  fun = "mean")+
+  geom_errorbar(stat = "summary", 
+                fun.min = function(x) 
+                mean(x) - sd(x), 
+                fun.max = function(x) 
+                mean(x) + sd(x), 
+                width = 0)+
+  labs(x=expression("DNase concentration (ng mL"^"-1"*")"),
+       y="Optical density")+
+* annotate(geom = "text", x = 10, y = 0.5,
+             label = expression(OD==frac(OD[max], 
+             italic(K)[M]+italic(C)))) # 添加公式
+```
+]
+
+.pull-right[
+&lt;img src="pics/DNase_4.png" width="3720" /&gt;
+]
+
+---
+## 如何在图上添加数学公式？
+
+1. `annotate(geom="text", x = ..., y = ..., label = ...)`
+1. .red[`?plotmath`]查看各种公式的代码，例如：  
+
+--
+
+.pull-left[
+Syntax |	Meaning 
+-------|-------------
+x + y	|x plus y 
+x - y	|x minus y 
+x %+-% y	|x plus or minus y
+x %.% y	|x cdot y 
+x[i]	|x subscript i 
+x^2	 |x superscript 2 
+]
+
+.pull-right[
+
+Syntax |	Meaning
+---------|-------------
+sqrt(x)	|square root of x
+x == y	|x equals y
+italic(x)	|draw x in italic font
+alpha -- omega	|Greek symbols
+frac(x, y)	|x over y
+... | ...
+
+]
+
+---
+
+## 另一个探索数据的超级武器：分面**`facet`**
+
+
+.pull-left[
+**有两种分面：**  
+- `facet_wrap(~因子)`：针对1个因子，1维分面  
+- `facet_grid(因子1~因子2)`：针对2个因子，2维分面  
+
+```r
+
+ggplot(DNase, aes(conc, density))+
+  geom_point()+
+* facet_wrap(~Run) # 针对Run这个因子分面
+```
+]
+
+.pull-right[
+- **每个Run都单独作图，数据趋势类似**  
+- **每组数据可以单独拟合，可查参数的变异程度**  
+  
+&lt;img src="pics/DNase_5.png" width="4400" /&gt;
+
+]
+
+---
+
+## 运用`for()`循环语句，批量拟合11组数据
+
+
+
+```r
+Run_level &lt;- unique(DNase$Run) # 有哪几组数据？
+N &lt;- length(Run_level) # 有几组数据？
+
+Vmax_each &lt;- numeric(N) #生成长度为N的向量，以备存储拟合值
+KM_each &lt;- numeric(N)
+
+#运用循环语句，每次拟合1组数据
+for (i in 1 : N) {
+d_i &lt;- subset(DNase, Run==Run_level[i]) #把第i组数据筛选出来
+fit_i &lt;- nls(density ~ conc * Vmax/(KM + conc), data = d_i, start = list(Vmax=2, KM=6)) #拟合第i组数据
+Vmax_each[i] &lt;- coefficients(fit_i)[1] #第拟合结果存入Vmax_each向量第i个位置
+KM_each[i] &lt;- coefficients(fit_i)[2] #同上
+}
+```
+
+--
+
+- 将拟合值存入数据表备用
+
+```r
+d_Vmax_KM &lt;- data.frame(Vmax_each, KM_each, Run = Run_level) 
+```
+
+
+---
+
+##查看一下11组拟合结果
+
+.pull-left[
+
+```r
+d_Vmax_KM
+```
+
+```
+##    Vmax_each  KM_each Run
+## 1   2.258552 4.021074   1
+## 2   2.591009 4.305742   2
+## 3   2.571666 4.120585   3
+## 4   2.333150 4.227158   4
+## 5   2.264528 3.725127   5
+## 6   2.246484 3.380303   6
+## 7   2.171841 3.264675   7
+## 8   2.254738 3.727607   8
+## 9   2.173733 3.423064   9
+## 10  2.087056 3.032812  10
+## 11  2.168591 3.413008  11
+```
+]
+
+--
+.pull-right[
+
+```r
+mean(Vmax_each)
+```
+
+```
+## [1] 2.283759
+```
+
+```r
+sd(Vmax_each)
+```
+
+```
+## [1] 0.1611077
+```
+
+```r
+mean(KM_each)
+```
+
+```
+## [1] 3.69465
+```
+
+```r
+sd(KM_each)
+```
+
+```
+## [1] 0.4268242
+```
+]
+
+---
+## 生成画11条拟合线的数据
+
+
+```r
+fit_x_11 &lt;- rep(seq(0, 14, length.out = 100), times = 11) #生成等间距x值100个，重复11次
+Vmax_11 &lt;- rep(Vmax_each, each = 100) #复制Vmax，复制100份
+KM_11 &lt;- rep(KM_each, each = 100) #复制KM，复制100份
+fit_y_11 &lt;- Vmax_11 * fit_x_11 /(KM_11 + fit_x_11) #将以上三者代入米氏方程，计算y（想象一下你熟悉的excel，操作其实是一样的）
+Run &lt;- rep(Run_level, each = 100) #复制Run编号，复制100份
+
+d_fit_11 &lt;- data.frame(conc = fit_x_11, density = fit_y_11, Run = Run)
+```
+
+---
+## 画11条拟合线  
+
+.pull-left[
+```r 
+
+ggplot(DNase, aes(conc, density))+
+  geom_point()+
+  facet_wrap(~Run)+
+* geom_line(data = d_fit_11) # 把11条拟合线画上去
+
+```
+]
+
+.pull-right[
+  
+&lt;img src="pics/DNase_6.png" width="4400" /&gt;
+]
+
+---
+
+## 修改细节  
+
+
+```r
+#把Run重新排序，并改名
+DNase$Run_new &lt;- factor(DNase$Run,
+                        levels=c("1","2","3","4","5","6","7","8","9","10","11"),
+                        labels = paste0("Run-", 1:11)) 
+#每套数据都要改                   
+d_fit_11$Run_new &lt;- factor(d_fit_11$Run,
+                           levels=c("1","2","3","4","5","6","7","8","9","10","11"),
+                           labels = paste0("Run-", 1:11)) 
+d_Vmax_KM$Run_new &lt;- factor(d_Vmax_KM$Run,
+                            levels=c("1","2","3","4","5","6","7","8","9","10","11"),
+                            labels = paste0("Run-", 1:11))                     
+# 生成标注Vmax和KM的标签
+d_Vmax_KM$label_1 &lt;- paste0("~italic(V)[max]==", round(d_Vmax_KM$Vmax_each, 2))
+d_Vmax_KM$label_2 &lt;- paste0("~italic(K)[M]==", round(d_Vmax_KM$KM_each, 2))    
+
+```
+
+---
+
+## 修改细节  
+
+
+```r
+ggplot(DNase, aes(conc, density))+
+  theme_classic()+ #经典主题
+  geom_point(color = "red2")+
+  facet_wrap(~Run_new, nrow = 2)+ #两行
+  geom_line(data = d_fit_11, size = 0.7, alpha = 0.7, color = "red2")+ #拟合线
+  labs(x = expression("DNase concentration (ng mL"^"-1"*")"),
+       y = "Optical density")+
+  geom_text(data = d_Vmax_KM, x = 3, y = 0.7, hjust = 0, size = 2.5,
+            aes(label = label_1), parse = T)+ #标注Vmax
+  geom_text(data = d_Vmax_KM, x=3, y= 0.3, hjust = 0, size = 2.5,
+            aes(label = label_2), parse = T)+ #标注KM
+  theme(strip.background = element_blank(),
+        strip.text = element_text(face = "bold", hjust = 0)) # 分面标签格式 
+
+```
+
+---
+  
+&lt;img src="pics/DNase_7.png" width="7187" /&gt;
+
+
+???
+ggsave("DNase_7.png", width = 539/90, height = 292/90, dpi = 900)
+---
+## 图上各主题元素的修改方法
+参考此网页：https://ggplot2.tidyverse.org/reference/theme.html  
+网页用夸张的例子演示了如何个性化修改图的每一部分。绝大多数时候，我们采用默认设置即可。但若确实需要修改，你都可以做到。
+---
+## 多图组合
+
+程序包：`patchwork`和`cowplot` 
+* `cowplot` https://wilkelab.org/cowplot/articles/index.html
+
+* `patchwork` https://patchwork.data-imaginist.com/
+
+
+
+---
+## 要点小结
+
+**理解两种等价的作图方式**
+- `geom_xxx(stat="summary") == stat_summary(geom="xxx")` 
+
+**添加拟合线** 
+- `nls()`非线性拟合 
+- `summary()`查看、提取拟合结果
+- `seq()`，`rep()`生成作图数据的有力工具
+
+**添加数学公式**
+- `annotate()` 往图上添加公式、文字
+- `?plotmath` 查看数学公式对应的代码
+
+**`facet`分面功能**：数据分析的世界因此而美好
+
+**`for()`循环语句**：把重复的工作交给电脑
+
+
+
+
+
+    </textarea>
+<style data-target="print-only">@media screen {.remark-slide-container{display:block;}.remark-slide-scaler{box-shadow:none;}}</style>
+<script src="https://remarkjs.com/downloads/remark-latest.min.js"></script>
+<script>var slideshow = remark.create({
+"highlightStyle": "github",
+"highlightLines": true,
+"countIncrementalSlides": false,
+"ratio": "16:9"
+});
+if (window.HTMLWidgets) slideshow.on('afterShowSlide', function (slide) {
+  window.dispatchEvent(new Event('resize'));
+});
+(function(d) {
+  var s = d.createElement("style"), r = d.querySelector(".remark-slide-scaler");
+  if (!r) return;
+  s.type = "text/css"; s.innerHTML = "@page {size: " + r.style.width + " " + r.style.height +"; }";
+  d.head.appendChild(s);
+})(document);
+
+(function(d) {
+  var el = d.getElementsByClassName("remark-slides-area");
+  if (!el) return;
+  var slide, slides = slideshow.getSlides(), els = el[0].children;
+  for (var i = 1; i < slides.length; i++) {
+    slide = slides[i];
+    if (slide.properties.continued === "true" || slide.properties.count === "false") {
+      els[i - 1].className += ' has-continuation';
+    }
+  }
+  var s = d.createElement("style");
+  s.type = "text/css"; s.innerHTML = "@media print { .has-continuation { display: none; } }";
+  d.head.appendChild(s);
+})(document);
+// delete the temporary CSS (for displaying all slides initially) when the user
+// starts to view slides
+(function() {
+  var deleted = false;
+  slideshow.on('beforeShowSlide', function(slide) {
+    if (deleted) return;
+    var sheets = document.styleSheets, node;
+    for (var i = 0; i < sheets.length; i++) {
+      node = sheets[i].ownerNode;
+      if (node.dataset["target"] !== "print-only") continue;
+      node.parentNode.removeChild(node);
+    }
+    deleted = true;
+  });
+})();
+// add `data-at-shortcutkeys` attribute to <body> to resolve conflicts with JAWS
+// screen reader (see PR #262)
+(function(d) {
+  let res = {};
+  d.querySelectorAll('.remark-help-content table tr').forEach(tr => {
+    const t = tr.querySelector('td:nth-child(2)').innerText;
+    tr.querySelectorAll('td:first-child .key').forEach(key => {
+      const k = key.innerText;
+      if (/^[a-z]$/.test(k)) res[k] = t;  // must be a single letter (key)
+    });
+  });
+  d.body.setAttribute('data-at-shortcutkeys', JSON.stringify(res));
+})(document);
+(function() {
+  "use strict"
+  // Replace <script> tags in slides area to make them executable
+  var scripts = document.querySelectorAll(
+    '.remark-slides-area .remark-slide-container script'
+  );
+  if (!scripts.length) return;
+  for (var i = 0; i < scripts.length; i++) {
+    var s = document.createElement('script');
+    var code = document.createTextNode(scripts[i].textContent);
+    s.appendChild(code);
+    var scriptAttrs = scripts[i].attributes;
+    for (var j = 0; j < scriptAttrs.length; j++) {
+      s.setAttribute(scriptAttrs[j].name, scriptAttrs[j].value);
+    }
+    scripts[i].parentElement.replaceChild(s, scripts[i]);
+  }
+})();
+(function() {
+  var links = document.getElementsByTagName('a');
+  for (var i = 0; i < links.length; i++) {
+    if (/^(https?:)?\/\//.test(links[i].getAttribute('href'))) {
+      links[i].target = '_blank';
+    }
+  }
+})();
+// adds .remark-code-has-line-highlighted class to <pre> parent elements
+// of code chunks containing highlighted lines with class .remark-code-line-highlighted
+(function(d) {
+  const hlines = d.querySelectorAll('.remark-code-line-highlighted');
+  const preParents = [];
+  const findPreParent = function(line, p = 0) {
+    if (p > 1) return null; // traverse up no further than grandparent
+    const el = line.parentElement;
+    return el.tagName === "PRE" ? el : findPreParent(el, ++p);
+  };
+
+  for (let line of hlines) {
+    let pre = findPreParent(line);
+    if (pre && !preParents.includes(pre)) preParents.push(pre);
+  }
+  preParents.forEach(p => p.classList.add("remark-code-has-line-highlighted"));
+})(document);</script>
+
+<script>
+slideshow._releaseMath = function(el) {
+  var i, text, code, codes = el.getElementsByTagName('code');
+  for (i = 0; i < codes.length;) {
+    code = codes[i];
+    if (code.parentNode.tagName !== 'PRE' && code.childElementCount === 0) {
+      text = code.textContent;
+      if (/^\\\((.|\s)+\\\)$/.test(text) || /^\\\[(.|\s)+\\\]$/.test(text) ||
+          /^\$\$(.|\s)+\$\$$/.test(text) ||
+          /^\\begin\{([^}]+)\}(.|\s)+\\end\{[^}]+\}$/.test(text)) {
+        code.outerHTML = code.innerHTML;  // remove <code></code>
+        continue;
+      }
+    }
+    i++;
+  }
+};
+slideshow._releaseMath(document);
+</script>
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+(function () {
+  var script = document.createElement('script');
+  script.type = 'text/javascript';
+  script.src  = 'https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-MML-AM_CHTML';
+  if (location.protocol !== 'file:' && /^https?:/.test(script.src))
+    script.src  = script.src.replace(/^https?:/, '');
+  document.getElementsByTagName('head')[0].appendChild(script);
+})();
+</script>
+  </body>
+</html>
